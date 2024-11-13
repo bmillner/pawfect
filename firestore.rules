@@ -1,0 +1,63 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isGroomer() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'groomer';
+    }
+    
+    function isCustomer() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwner(userId);
+    }
+
+    // Customers collection
+    match /customers/{customerId} {
+      allow read: if isGroomer() || isOwner(resource.data.userId);
+      allow create: if isGroomer();
+      allow update: if isGroomer() || isOwner(resource.data.userId);
+      allow delete: if isGroomer();
+    }
+
+    // Appointments collection
+    match /appointments/{appointmentId} {
+      allow read: if isGroomer() || 
+        isOwner(resource.data.customerId);
+      allow create: if isGroomer() || 
+        (isCustomer() && request.resource.data.customerId == request.auth.uid);
+      allow update: if isGroomer() || 
+        (isOwner(resource.data.customerId) && 
+          resource.data.status == 'scheduled');
+      allow delete: if isGroomer();
+    }
+
+    // Pets collection
+    match /pets/{petId} {
+      allow read: if isGroomer() || 
+        isOwner(resource.data.customerId);
+      allow create: if isGroomer() || 
+        (isCustomer() && request.resource.data.customerId == request.auth.uid);
+      allow update: if isGroomer() || 
+        isOwner(resource.data.customerId);
+      allow delete: if isGroomer() || 
+        isOwner(resource.data.customerId);
+    }
+  }
+}
